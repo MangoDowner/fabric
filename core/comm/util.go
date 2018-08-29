@@ -8,7 +8,6 @@ package comm
 
 import (
 	"bytes"
-	"crypto/x509"
 	"encoding/pem"
 
 	"github.com/golang/protobuf/proto"
@@ -17,10 +16,11 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
+	"github.com/tjfoc/gmsm/sm2"
 )
 
 // AddPemToCertPool adds PEM-encoded certs to a cert pool
-func AddPemToCertPool(pemCerts []byte, pool *x509.CertPool) error {
+func AddPemToCertPool(pemCerts []byte, pool *sm2.CertPool) error {
 	certs, _, err := pemToX509Certs(pemCerts)
 	if err != nil {
 		return err
@@ -32,10 +32,10 @@ func AddPemToCertPool(pemCerts []byte, pool *x509.CertPool) error {
 }
 
 //utility function to parse PEM-encoded certs
-func pemToX509Certs(pemCerts []byte) ([]*x509.Certificate, []string, error) {
+func pemToX509Certs(pemCerts []byte) ([]*sm2.Certificate, []string, error) {
 
 	//it's possible that multiple certs are encoded
-	certs := []*x509.Certificate{}
+	certs := []*sm2.Certificate{}
 	subjects := []string{}
 	for len(pemCerts) > 0 {
 		var block *pem.Block
@@ -49,7 +49,7 @@ func pemToX509Certs(pemCerts []byte) ([]*x509.Certificate, []string, error) {
 		}
 		*/
 
-		cert, err := x509.ParseCertificate(block.Bytes)
+		cert, err := sm2.ParseCertificate(block.Bytes)
 		if err != nil {
 			return nil, subjects, err
 		} else {

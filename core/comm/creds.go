@@ -7,12 +7,13 @@ SPDX-License-Identifier: Apache-2.0
 package comm
 
 import (
-	"crypto/tls"
+
 	"errors"
 	"net"
-
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
+	tls "github.com/tjfoc/gmtls"
+	"github.com/tjfoc/gmtls/gmcredentials"
 )
 
 var (
@@ -56,7 +57,7 @@ func (sc *serverCreds) ServerHandshake(rawConn net.Conn) (net.Conn, credentials.
 	if err := conn.Handshake(); err != nil {
 		return nil, nil, err
 	}
-	return conn, credentials.TLSInfo{State: conn.ConnectionState()}, nil
+	return conn, gmcredentials.TLSInfo{State: conn.ConnectionState()}, nil
 }
 
 // Info provides the ProtocolInfo of this TransportCredentials.

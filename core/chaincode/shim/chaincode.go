@@ -80,7 +80,7 @@ var streamGetter peerStreamGetter
 //the non-mock user CC stream establishment func
 func userChaincodeStreamGetter(name string) (PeerChaincodeStream, error) {
 	flag.StringVar(&peerAddress, "peer.address", "", "peer address")
-	if viper.GetBool("peer.tls.enabled") {
+	if comm.TLSEnabled() {
 		keyPath := viper.GetString("tls.client.key.path")
 		certPath := viper.GetString("tls.client.cert.path")
 
@@ -165,8 +165,8 @@ func IsEnabledForLogLevel(logLevel string) bool {
 }
 
 // SetupChaincodeLogging sets the chaincode logging format and the level
-// to the values of CORE_CHAINCODE_LOGGING_FORMAT, CORE_CHAINCODE_LOGGING_LEVEL
-// and CORE_CHAINCODE_LOGGING_SHIM set from core.yaml by chaincode_support.go
+// to the values of CORE_CHAINCODE_LOGFORMAT and CORE_CHAINCODE_LOGLEVEL set
+// from core.yaml by chaincode_support.go
 func SetupChaincodeLogging() {
 	viper.SetEnvPrefix("CORE")
 	viper.AutomaticEnv()
@@ -254,7 +254,10 @@ func newPeerClientConnection() (*grpc.ClientConn, error) {
 		ClientInterval: time.Duration(1) * time.Minute,
 		ClientTimeout:  time.Duration(20) * time.Second,
 	}
-	if viper.GetBool("peer.tls.enabled") {
+	chaincodeLogger.Error("err----commm.TLSEnabled--------err %b",comm.TLSEnabled());
+	if comm.TLSEnabled() {
+		chaincodeLogger.Error("err---key cert-----err %s %s",key,cert);
+
 		return comm.NewClientConnectionWithAddress(peerAddress, true, true,
 			comm.InitTLSForShim(key, cert), kaOpts)
 	}
@@ -283,17 +286,18 @@ func chatWithPeer(chaincodename string, stream PeerChaincodeStream, cc Chaincode
 	go func() {
 		defer close(waitc)
 		msgAvail := make(chan *pb.ChaincodeMessage)
+		var nsInfo *nextStateInfo
 		var in *pb.ChaincodeMessage
 		recv := true
 		for {
 			in = nil
 			err = nil
+			nsInfo = nil
 			if recv {
 				recv = false
 				go func() {
 					var in2 *pb.ChaincodeMessage
 					in2, err = stream.Recv()
-					errc <- err
 					msgAvail <- in2
 				}()
 			}
@@ -304,7 +308,7 @@ func chatWithPeer(chaincodename string, stream PeerChaincodeStream, cc Chaincode
 					continue
 				}
 				//no, bail
-				err = errors.Wrap(sendErr, "error sending")
+				err = errors.Wrap(sendErr, fmt.Sprintf("error sending %s", in.Type.String()))
 				return
 			case in = <-msgAvail:
 				if err == io.EOF {
@@ -319,11 +323,18 @@ func chatWithPeer(chaincodename string, stream PeerChaincodeStream, cc Chaincode
 					chaincodeLogger.Debugf("%+v", err)
 					return
 				}
-				chaincodeLogger.Debugf("[%s]Received message %s from peer", shorttxid(in.Txid), in.Type)
+				chaincodeLogger.Debugf("[%s]Received message %s from shim", shorttxid(in.Txid), in.Type.String())
 				recv = true
+			case nsInfo = <-handler.nextState:
+				in = nsInfo.msg
+				if in == nil {
+					panic("nil msg")
+				}
+				chaincodeLogger.Debugf("[%s]Move state message %s", shorttxid(in.Txid), in.Type.String())
 			}
 
-			err = handler.handleMessage(in, errc)
+			// Call FSM.handleMessage()
+			err = handler.handleMessage(in)
 			if err != nil {
 				err = errors.WithMessage(err, "error handling message")
 				return
@@ -334,6 +345,9 @@ func chatWithPeer(chaincodename string, stream PeerChaincodeStream, cc Chaincode
 				chaincodeLogger.Debug("Sending KEEPALIVE response")
 				//ignore any errors, maybe next KEEPALIVE will work
 				handler.serialSendAsync(in, nil)
+			} else if nsInfo != nil && nsInfo.sendToCC {
+				chaincodeLogger.Debugf("[%s]send state message %s", shorttxid(in.Txid), in.Type.String())
+				handler.serialSendAsync(in, errc)
 			}
 		}
 	}()

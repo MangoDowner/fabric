@@ -20,7 +20,7 @@ SPDX-License-Identifier: Apache-2.0
 package peer
 
 import (
-	"crypto/tls"
+
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -31,6 +31,8 @@ import (
 	pb "github.com/hyperledger/fabric/protos/peer"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
+	tls "github.com/tjfoc/gmtls"
+
 )
 
 // Is the configuration cached?
@@ -166,7 +168,7 @@ func GetServerConfig() (comm.ServerConfig, error) {
 		}
 	}
 	// get the default keepalive options
-	serverConfig.KaOpts = comm.DefaultKeepaliveOptions
+	serverConfig.KaOpts = comm.DefaultKeepaliveOptions()
 	// check to see if minInterval is set for the env
 	if viper.IsSet("peer.keepalive.minInterval") {
 		serverConfig.KaOpts.ServerMinInterval = viper.GetDuration("peer.keepalive.minInterval")

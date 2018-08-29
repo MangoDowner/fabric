@@ -7,11 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 package kafka
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 
 	"github.com/Shopify/sarama"
 	localconfig "github.com/hyperledger/fabric/orderer/common/localconfig"
+	"github.com/tjfoc/gmsm/sm2"
+	tls "github.com/tjfoc/gmtls"
+
 )
 
 func newBrokerConfig(tlsConfig localconfig.TLS, retryOptions localconfig.Retry, kafkaVersion sarama.KafkaVersion, chosenStaticPartition int32) *sarama.Config {
@@ -40,7 +41,7 @@ func newBrokerConfig(tlsConfig localconfig.TLS, retryOptions localconfig.Retry, 
 			logger.Panic("Unable to decode public/private key pair:", err)
 		}
 		// create root CA pool
-		rootCAs := x509.NewCertPool()
+		rootCAs := sm2.NewCertPool()
 		for _, certificate := range tlsConfig.RootCAs {
 			if !rootCAs.AppendCertsFromPEM([]byte(certificate)) {
 				logger.Panic("Unable to parse the root certificate authority certificates (Kafka.Tls.RootCAs)")
@@ -52,6 +53,7 @@ func newBrokerConfig(tlsConfig localconfig.TLS, retryOptions localconfig.Retry, 
 			MinVersion:   tls.VersionTLS12,
 			MaxVersion:   0, // Latest supported TLS version
 		}
+
 	}
 
 	// Set equivalent of Kafka producer config max.request.bytes to the default

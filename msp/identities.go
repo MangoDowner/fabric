@@ -19,7 +19,6 @@ package msp
 import (
 	"crypto"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
 	"time"
@@ -28,8 +27,8 @@ import (
 	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/common/flogging"
 	"github.com/hyperledger/fabric/protos/msp"
-	"github.com/op/go-logging"
 	"github.com/pkg/errors"
+	"github.com/tjfoc/gmsm/sm2"
 )
 
 var mspIdentityLogger = flogging.MustGetLogger("msp/identity")
@@ -38,8 +37,8 @@ type identity struct {
 	// id contains the identifier (MSPID and identity identifier) for this instance
 	id *IdentityIdentifier
 
-	// cert contains the x.509 certificate that signs the public key of this instance
-	cert *x509.Certificate
+	// cert contains the sm2 certificate that signs the public key of this instance
+	cert *sm2.Certificate
 
 	// this is the public key of this instance
 	pk bccsp.Key
@@ -48,10 +47,10 @@ type identity struct {
 	msp *bccspmsp
 }
 
-func newIdentity(cert *x509.Certificate, pk bccsp.Key, msp *bccspmsp) (Identity, error) {
-	if mspIdentityLogger.IsEnabledFor(logging.DEBUG) {
-		mspIdentityLogger.Debugf("Creating identity instance for cert %s", certToPEM(cert))
-	}
+func newIdentity(cert *sm2.Certificate, pk bccsp.Key, msp *bccspmsp) (Identity, error) {
+	//if mspIdentityLogger.IsEnabledFor(logging.DEBUG) {
+	mspIdentityLogger.Debugf("Creating identity instance for cert %s", certToPEM(cert))
+	//}
 
 	// Sanitize first the certificate
 	cert, err := msp.sanitizeCert(cert)
@@ -66,11 +65,15 @@ func newIdentity(cert *x509.Certificate, pk bccsp.Key, msp *bccspmsp) (Identity,
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed getting hash function options")
 	}
+	mspIdentityLogger.Debugf("identityIdentifier hash function %s", hashOpt.Algorithm())
+
 
 	digest, err := msp.bccsp.Hash(cert.Raw, hashOpt)
 	if err != nil {
 		return nil, errors.WithMessage(err, "failed hashing raw certificate to compute the id of the IdentityIdentifier")
 	}
+	mspIdentityLogger.Debugf("identityIdentifier digest  %s", hex.Dump(digest))
+
 
 	id := &IdentityIdentifier{
 		Mspid: msp.name,
@@ -128,17 +131,13 @@ func (id *identity) GetOrganizationalUnits() []*OUIdentifier {
 	return res
 }
 
-func (id *identity) Anonymous() bool {
-	return false
-}
-
 // NewSerializedIdentity returns a serialized identity
-// having as content the passed mspID and x509 certificate in PEM format.
+// having as content the passed mspID and sm2 certificate in PEM format.
 // This method does not check the validity of certificate nor
 // any consistency of the mspID with it.
 func NewSerializedIdentity(mspID string, certPEM []byte) ([]byte, error) {
 	// We serialize identities by prepending the MSPID
-	// and appending the x509 cert in PEM format
+	// and appending the sm2 cert in PEM format
 	sId := &msp.SerializedIdentity{Mspid: mspID, IdBytes: certPEM}
 	raw, err := proto.Marshal(sId)
 	if err != nil {
@@ -153,21 +152,32 @@ func NewSerializedIdentity(mspID string, certPEM []byte) ([]byte, error) {
 func (id *identity) Verify(msg []byte, sig []byte) error {
 	// mspIdentityLogger.Infof("Verifying signature")
 
+	mspIdentityLogger.Infof("Verifying signature")
+
+
 	// Compute Hash
 	hashOpt, err := id.getHashOpt(id.msp.cryptoConfig.SignatureHashFamily)
+
+	mspIdentityLogger.Debugf("Verify: hashOpt = %s", hashOpt.Algorithm())
+
+
 	if err != nil {
 		return errors.WithMessage(err, "failed getting hash function options")
 	}
 
 	digest, err := id.msp.bccsp.Hash(msg, hashOpt)
+
 	if err != nil {
 		return errors.WithMessage(err, "failed computing digest")
 	}
 
-	if mspIdentityLogger.IsEnabledFor(logging.DEBUG) {
-		mspIdentityLogger.Debugf("Verify: digest = %s", hex.Dump(digest))
-		mspIdentityLogger.Debugf("Verify: sig = %s", hex.Dump(sig))
-	}
+	//if mspIdentityLogger.IsEnabledFor(logging.DEBUG) {
+	mspIdentityLogger.Debugf("Verify: digest = %s", hex.Dump(digest))
+	mspIdentityLogger.Debugf("Verify: sig = %s", hex.Dump(sig))
+	privateKey:=id.pk.SKI();
+	mspIdentityLogger.Debugf("Verify: id.pk = %s", hex.Dump(privateKey))
+
+	//}
 
 	valid, err := id.msp.bccsp.Verify(id.pk, sig, digest, nil)
 	if err != nil {
@@ -217,7 +227,7 @@ type signingidentity struct {
 	signer crypto.Signer
 }
 
-func newSigningIdentity(cert *x509.Certificate, pk bccsp.Key, signer crypto.Signer, msp *bccspmsp) (SigningIdentity, error) {
+func newSigningIdentity(cert *sm2.Certificate, pk bccsp.Key, signer crypto.Signer, msp *bccspmsp) (SigningIdentity, error) {
 	//mspIdentityLogger.Infof("Creating signing identity instance for ID %s", id)
 	mspId, err := newIdentity(cert, pk, msp)
 	if err != nil {
